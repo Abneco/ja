@@ -1,0 +1,231 @@
+/*
+ * Copyright 2026 Netflix, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+package com.netflix.tools.ja;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.lang.module.ModuleDescriptor;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.Set;
+import javax.lang.model.SourceVersion;
+import javax.tools.OptionChecker;
+
+import com.netflix.tools.launcher.ModuleOptions;
+
+/**
+ * Describes a tool metadata manifest and supplements its standard {@link
+ * javax.tools.OptionChecker} contract.
+ *
+ * <p>The metadata supplies launch behavior, activation, defaults, and
+ * packaged-content conventions that the JDK tool interfaces cannot express.
+ */
+public record ToolDefinition(String name,
+                             Launch launch,
+                             Optional<String> activation,
+                             Optional<String> module,
+                             String provider,
+                             Optional<String> version,
+                             Set<String> options,
+                             boolean compileTime,
+                             boolean validateRuntimeAccess,
+                             java.util.List<String> defaults,
+                             Optional<String> classSuffix,
+                             Optional<String> packageSuffix) implements OptionChecker {
+
+    public enum Launch {
+        PROVIDER,
+        JAVA;
+
+        private static Launch parse(String value) {
+            return switch (value) {
+                case "provider" -> PROVIDER;
+                case "java" -> JAVA;
+                default -> throw new IllegalArgumentException("launch must be provider or java");
+            };
+        }
+    }
+
+    public ToolDefinition(String name,
+                          Launch launch,
+                          Optional<String> activation,
+                          Optional<String> module,
+                          String provider,
+                          Optional<String> version,
+                          Set<String> options,
+                          java.util.List<String> defaults) {
+        this(name,
+             launch,
+             activation,
+             module,
+             provider,
+             version,
+             options,
+             false,
+             false,
+             defaults,
+             Optional.empty(),
+             Optional.empty());
+    }
+
+    public ToolDefinition(String name,
+                          Launch launch,
+                          Optional<String> activation,
+                          Optional<String> module,
+                          String provider,
+                          Optional<String> version,
+                          Set<String> options,
+                          java.util.List<String> defaults,
+                          Optional<String> classSuffix,
+                          Optional<String> packageSuffix) {
+        this(name,
+             launch,
+             activation,
+             module,
+             provider,
+             version,
+             options,
+             false,
+             false,
+             defaults,
+             classSuffix,
+             packageSuffix);
+    }
+
+    public ToolDefinition {
+        requireIdentifier("name", name);
+        Objects.requireNonNull(launch);
+        Objects.requireNonNull(activation);
+        Objects.requireNonNull(module);
+        requireIdentifier("provider", provider);
+        Objects.requireNonNull(version);
+        options = Set.copyOf(options);
+        for (String option : options) {
+            if (!option.matches("[a-z][a-z0-9-]*(?:=(?:single|list|main|roots))?")) {
+                throw new IllegalArgumentException("Invalid option key: " + option);
+            }
+        }
+        if (options.stream()
+                        .filter(option -> option.equals("module") || option.startsWith("module="))
+                        .count()
+                > 1) {
+            throw new IllegalArgumentException("Conflicting module option forms");
+        }
+        if (options.contains("module=roots") && !options.contains("add-modules")) {
+            throw new IllegalArgumentException("module=roots requires add-modules");
+        }
+        defaults = java.util.List.copyOf(defaults);
+        classSuffix = Objects.requireNonNull(classSuffix);
+        classSuffix.ifPresent(suffix -> {
+            if (!SourceVersion.isIdentifier(suffix) || SourceVersion.isKeyword(suffix)) {
+                throw new IllegalArgumentException("Invalid class suffix: " + suffix);
+            }
+        });
+        packageSuffix = Objects.requireNonNull(packageSuffix);
+        packageSuffix.ifPresent(suffix -> {
+            if (!SourceVersion.isIdentifier(suffix) || SourceVersion.isKeyword(suffix)) {
+                throw new IllegalArgumentException("Invalid package suffix: " + suffix);
+            }
+        });
+    }
+
+    public static ToolDefinition read(String name, InputStream input) throws IOException {
+        var properties = new Properties();
+        properties.load(new InputStreamReader(input, StandardCharsets.UTF_8));
+        var launch = optional(properties, "launch").map(Launch::parse).orElse(Launch.PROVIDER);
+        var module = optional(properties, "module");
+        var provider = optional(properties, "provider").orElse(name);
+        var activation = optional(properties, "activation");
+        var version = optional(properties, "version");
+        var options = Set.copyOf(commaSeparatedValues(properties, "options"));
+        boolean compileTime = booleanProperty(properties, "compile-time");
+        boolean validateRuntimeAccess = booleanProperty(properties, "validate-runtime-access");
+        var defaults = optional(properties, "defaults").map(ArgumentFiles::parse).orElseGet(java.util.List::of);
+        var classSuffix = optional(properties, "class-suffix");
+        var packageSuffix = optional(properties, "package-suffix");
+        return new ToolDefinition(name,
+                launch,
+                activation,
+                module,
+                provider,
+                version,
+                options,
+                compileTime,
+                validateRuntimeAccess,
+                defaults,
+                classSuffix,
+                packageSuffix);
+    }
+
+    @Override
+    public int isSupportedOption(String option) {
+        return ModuleOptions.checker(options).isSupportedOption(option);
+    }
+
+    ModuleResolver.Projection projection() {
+        return new ModuleResolver.Projection(ModuleOptions.resolutionOptions(options), compileTime, validateRuntimeAccess);
+    }
+
+    public String resolveVersion(Optional<ModuleDescriptor.Version> selectedVersion) {
+        if (version.isPresent()) {
+            return version.get();
+        }
+        if (activation.isEmpty()) {
+            throw new IllegalStateException("Tool " + name + " does not declare a version");
+        }
+        if (selectedVersion.isEmpty()) {
+            throw new IllegalStateException("Activation module " + activation.get() + " has no selected version");
+        }
+        return selectedVersion.orElseThrow().toString();
+    }
+
+    private static java.util.List<String> commaSeparatedValues(Properties properties, String key) {
+        return optional(properties, key)
+                .map(value ->
+                        Arrays.stream(value.split(","))
+                                .map(String::strip)
+                                .filter(element -> !element.isEmpty())
+                                .toList())
+                .orElseGet(java.util.List::of);
+    }
+
+    private static Optional<String> optional(Properties properties, String key) {
+        return Optional.ofNullable(properties.getProperty(key))
+                .map(String::strip)
+                .filter(value -> !value.isEmpty());
+    }
+
+    private static boolean booleanProperty(Properties properties, String key) {
+        var value = optional(properties, key);
+        if (value.isEmpty())
+            return false;
+        if (value.get().equals("true"))
+            return true;
+        if (value.get().equals("false"))
+            return false;
+        throw new IllegalArgumentException(key + " must be true or false");
+    }
+
+    private static void requireIdentifier(String field, String value) {
+        Objects.requireNonNull(value);
+        if (value.isBlank()) {
+            throw new IllegalArgumentException("Tool " + field + " must not be empty");
+        }
+    }
+}

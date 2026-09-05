@@ -1,0 +1,4 @@
+*.class
+build/
+app.aot
+/src/com.netflix.tools.launcher/META-INF/com.netflix.tools.launcher/

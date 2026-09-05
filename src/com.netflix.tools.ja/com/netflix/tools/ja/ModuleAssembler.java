@@ -1,0 +1,306 @@
+/*
+ * Copyright 2026 Netflix, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+package com.netflix.tools.ja;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintStream;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import com.netflix.tools.ja.JmodPackager.Artifacts;
+import com.netflix.tools.ja.ModuleResolver.Projection;
+
+/**
+ * Assembles flat, module-named binary, source, documentation, and JMOD
+ * artifacts.
+ */
+final class ModuleAssembler {
+    record Options(String version, String targetPlatform, boolean jmod) {}
+
+    private record Plan(
+            String moduleName,
+            Path moduleSource,
+            Map<String, Path> observableSources,
+            Path compilationRoot,
+            Path compileArguments,
+            Path runtimeArguments,
+            Path jarArguments,
+            Path javadocArguments,
+            Path javadocOutput,
+            String targetPlatform,
+            boolean jmod) {}
+
+    private static final List<String> JAVADOC_TAGS = List.of(
+            "release:X",
+            "mainClass:X",
+            "enablePreview:X",
+            "processWith:X",
+            "enableNativeAccess:X",
+            "enableFinalFieldMutation:X",
+            "addOpens:X",
+            "addExports:X");
+
+    private final ToolServices tools;
+    private final List<ToolDefinition> definitions;
+    private final JarPackager jars;
+    private final JmodPackager jmods;
+
+    ModuleAssembler(ToolServices tools, List<ToolDefinition> definitions) {
+        this.tools = tools;
+        this.definitions = List.copyOf(definitions);
+        this.jars = new JarPackager(tools, definitions);
+        this.jmods = new JmodPackager(tools, definitions);
+    }
+
+    int assemble(
+            JaInvocation commandLine,
+            ModuleSourcePath moduleSourcePath,
+            Options options,
+            Path destination,
+            InputStream in,
+            PrintStream out,
+            PrintStream err)
+            throws IOException {
+        requireSourceModules(commandLine, moduleSourcePath);
+        Path output = destination.toAbsolutePath().normalize();
+        if (Files.exists(output, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalArgumentException("Assembly destination already exists: " + output);
+        }
+        Path parent = output.getParent();
+        if (parent == null) {
+            throw new IllegalArgumentException("Assembly destination has no parent: " + output);
+        }
+        Files.createDirectories(parent);
+        Path staged = Files.createTempDirectory(parent, ".ja-assemble-");
+        boolean complete = false;
+        try {
+            Path work = Files.createDirectory(staged.resolve(".work"));
+            List<Plan> plans = plans(commandLine, moduleSourcePath, options, work, err);
+            for (Plan plan : plans) {
+                int result = assemble(plan, staged, in, out, err);
+                if (result != 0) {
+                    return result;
+                }
+            }
+            deleteTree(work);
+            move(staged, output);
+            complete = true;
+            return 0;
+        } finally {
+            if (!complete) {
+                deleteTree(staged);
+            }
+        }
+    }
+
+    private static void requireSourceModules(JaInvocation commandLine, ModuleSourcePath moduleSourcePath) {
+        if (commandLine.rootModules().isEmpty()) {
+            throw new IllegalArgumentException("assemble requires at least one source module");
+        }
+        for (String module : commandLine.rootModules()) {
+            if (!moduleSourcePath.modules().containsKey(module)) {
+                throw new IllegalArgumentException("Assemble requires a source module: " + module);
+            }
+        }
+    }
+
+    private List<Plan> plans(JaInvocation commandLine, ModuleSourcePath moduleSourcePath, Options options,
+            Path work, PrintStream err)
+            throws IOException {
+        var plans = new ArrayList<Plan>();
+        int index = 0;
+        for (String module : commandLine.rootModules()) {
+            Path moduleWork = Files.createDirectory(work.resolve(Integer.toString(index++)));
+            Path compilationRoot = moduleWork.resolve("modules");
+            Path compileArguments = moduleWork.resolve("compile.args");
+            Path runtimeArguments = moduleWork.resolve("runtime.args");
+            Path jarArguments = moduleWork.resolve("jar.args");
+            Path javadocArguments = moduleWork.resolve("javadoc.args");
+            Path javadocOutput = moduleWork.resolve("javadoc");
+
+            var arguments = new ArrayList<>(ResolutionArguments.withRoots(commandLine.resolutionArguments(), List.of(module)));
+            arguments.add("--verify-module-hashes");
+            arguments.add("--module-version");
+            arguments.add(options.version());
+            writeProjection(arguments, ToolProjections.JAVAC, compileArguments, err);
+            writeProjection(arguments, ToolProjections.COMPLETE_RUNTIME_WITH_ACCESS, runtimeArguments, err);
+            writeProjection(arguments, new Projection(Set.of("main-class", "module-version"), false, false),
+                    jarArguments, err);
+            writeProjection(arguments, ToolProjections.sourceList(true), javadocArguments, err);
+            plans.add(
+                    new Plan(
+                            module,
+                            moduleSourcePath.modules().get(module),
+                            moduleSourcePath.modules(),
+                            compilationRoot,
+                            compileArguments,
+                            runtimeArguments,
+                            jarArguments,
+                            javadocArguments,
+                            javadocOutput,
+                            options.targetPlatform(),
+                            options.jmod()));
+        }
+        return List.copyOf(plans);
+    }
+
+    private void writeProjection(List<String> resolutionArguments, Projection projection, Path argumentFile,
+            PrintStream err) {
+        var arguments = new ArrayList<>(resolutionArguments);
+        arguments.add("--resolve-options");
+        arguments.add(projection.options().stream()
+                .sorted()
+                .collect(Collectors.joining(",")));
+        if (projection.compileTime()) {
+            arguments.add("--compile-time");
+        }
+        if (projection.validateRuntimeAccess()) {
+            arguments.add("--validate-runtime-access");
+        }
+        if (!projection.emitCompileDiagnostics()) {
+            arguments.add("--no-compile-diagnostics");
+        }
+        arguments.add("--write-argfile");
+        arguments.add(argumentFile.toString());
+        int result;
+        try (var output = new PrintStream(OutputStream.nullOutputStream())) {
+            result = tools.run("jig", InputStream.nullInputStream(), output, err,
+                    arguments.toArray(String[]::new));
+        }
+        if (result != 0) {
+            throw new ToolExecutionException(result);
+        }
+    }
+
+    private int assemble(Plan plan, Path output, InputStream in,
+                         PrintStream out, PrintStream err)
+            throws IOException {
+        List<String> compileArguments = ArgumentFiles.parse(Files.readString(plan.compileArguments()));
+        List<String> runtimeArguments = ArgumentFiles.parse(Files.readString(plan.runtimeArguments()));
+        int sourcesResult = archive(plan.moduleSource(), output.resolve(plan.moduleName() + "-sources.jar"), in,
+                out, err);
+        if (sourcesResult != 0) {
+            return sourcesResult;
+        }
+        int javadocResult = javadoc(plan, in, out, err);
+        if (javadocResult != 0) {
+            return javadocResult;
+        }
+        int documentationResult = archive(plan.javadocOutput(), output.resolve(plan.moduleName() + "-javadoc.jar"), in,
+                out, err);
+        if (documentationResult != 0) {
+            return documentationResult;
+        }
+
+        var moduleArguments = ArgumentFiles.parse(Files.readString(plan.jarArguments()));
+        try (var filteredPath = FilteredModulePath.prepare(List.copyOf(plan.observableSources().keySet()), compileArguments,
+                runtimeArguments, definitions)) {
+            var filteredArguments = filteredPath.arguments();
+            var content = filteredPath.module(plan.moduleName());
+            var jmodArtifacts = new Artifacts(
+                    plan.moduleName(),
+                    plan.moduleSource(),
+                    plan.observableSources(),
+                    plan.compilationRoot(),
+                    content,
+                    plan.compilationRoot().getParent(),
+                    output,
+                    plan.moduleName(),
+                    filteredArguments,
+                    moduleArguments,
+                    plan.targetPlatform(),
+                    plan.jmod());
+            var jar = jars.createExact(
+                    plan.moduleName(),
+                    content,
+                    moduleArguments,
+                    filteredArguments,
+                    output.resolve(plan.moduleName() + ".jar"),
+                    jmods.creates(jmodArtifacts),
+                    in,
+                    out,
+                    err);
+            if (jar.exitCode() != 0 || jar.automatic()) {
+                return jar.exitCode();
+            }
+            return jmods.create(jmodArtifacts, in, out, err);
+        }
+    }
+
+    private int javadoc(Plan plan, InputStream in, PrintStream out,
+                        PrintStream err)
+            throws IOException {
+        Files.createDirectories(plan.javadocOutput());
+        var arguments = new ArrayList<String>();
+        arguments.add("@" + plan.javadocArguments());
+        arguments.add("-quiet");
+        arguments.add("-notimestamp");
+        arguments.add("-Xdoclint:all,-missing");
+        for (String tag : JAVADOC_TAGS) {
+            arguments.add("-tag");
+            arguments.add(tag);
+        }
+        arguments.add("-d");
+        arguments.add(plan.javadocOutput()
+                          .toString());
+        return tools.run("javadoc", in, out, err, arguments.toArray(String[]::new));
+    }
+
+    private int archive(Path content, Path archive, InputStream in,
+                        PrintStream out, PrintStream err) {
+        return tools.run(
+                "jar",
+                in,
+                out,
+                err,
+                "--create",
+                "--no-manifest",
+                "--file",
+                archive.toString(),
+                "-C",
+                content.toString(),
+                ".");
+    }
+
+    private static void move(Path source, Path destination) throws IOException {
+        try {
+            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException _) {
+            Files.move(source, destination);
+        }
+    }
+
+    private static void deleteTree(Path path) throws IOException {
+        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+        try (var paths = Files.walk(path)) {
+            for (Path entry : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(entry);
+            }
+        }
+    }
+}
