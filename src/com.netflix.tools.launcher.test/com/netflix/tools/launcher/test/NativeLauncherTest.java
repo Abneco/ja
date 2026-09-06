@@ -15,6 +15,8 @@
 package com.netflix.tools.launcher.test;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -186,6 +188,15 @@ class NativeLauncherTest {
         String message = "Native launcher binaries are missing; run src/launcher/build.sh first";
         assertTrue(Files.isRegularFile(nativeBinary("launcher")), message + ": " + nativeBinary("launcher"));
         assertTrue(Files.isRegularFile(nativeBinary("dispatcher")), message + ": " + nativeBinary("dispatcher"));
+    }
+
+    @Test
+    void linuxLaunchersDoNotReserveStaticTls() throws Exception {
+        Path binaries = projectRoot().resolve("src/com.netflix.tools.launcher/META-INF/com.netflix.tools.launcher");
+        for (String architecture : List.of("aarch_64", "x86_64")) {
+            Path binary = binaries.resolve("linux-" + architecture).resolve("launcher");
+            assertEquals(0, staticTlsSize(binary), binary.toString());
+        }
     }
 
     @BeforeEach
@@ -775,6 +786,25 @@ class NativeLauncherTest {
         return projectRoot().resolve("src/com.netflix.tools.launcher/META-INF/com.netflix.tools.launcher")
                             .resolve(classifier())
                             .resolve(name + (isWindows() ? ".exe" : ""));
+    }
+
+    private static long staticTlsSize(Path binary) throws IOException {
+        ByteBuffer elf = ByteBuffer.wrap(Files.readAllBytes(binary)).order(ByteOrder.LITTLE_ENDIAN);
+        if (elf.get(0) != 0x7f || elf.get(1) != 'E' || elf.get(2) != 'L' || elf.get(3) != 'F'
+                || elf.get(4) != 2 || elf.get(5) != 1) {
+            throw new IOException("Expected a little-endian ELF64 executable: " + binary);
+        }
+        long programHeaders = elf.getLong(32);
+        int entrySize = Short.toUnsignedInt(elf.getShort(54));
+        int entries = Short.toUnsignedInt(elf.getShort(56));
+        long total = 0;
+        for (int index = 0; index < entries; index++) {
+            int offset = Math.toIntExact(programHeaders + (long) index * entrySize);
+            if (elf.getInt(offset) == 7) { // PT_TLS
+                total = Math.addExact(total, elf.getLong(offset + 40));
+            }
+        }
+        return total;
     }
 
     private static String classifier() {

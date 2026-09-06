@@ -142,7 +142,7 @@ compile_unix() {
         "$root/$stub_source" \
         "$soname"
     local arguments=(
-        cc -target "$target" "${c_flags[@]}"
+        cc -target "$target" "${c_flags[@]}" -Os -s
         -I"$root/include" -I"$root/include/darwin"
         -o "$platform/launcher"
         "$root/main.c"
@@ -165,7 +165,7 @@ compile_windows() {
 
     mkdir -p "$platform"
     "$zig" dlltool -d "$root/jli.def" -l "$platform/jli.lib" -m "$machine"
-    "$zig" cc -target "$target" "${c_flags[@]}" \
+    "$zig" cc -target "$target" "${c_flags[@]}" -Os -s \
         -I"$root/include" -I"$root/include/windows" \
         -o "$platform/launcher.exe" \
         "$root/main.c" \
