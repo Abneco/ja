@@ -27,8 +27,6 @@ jobs:
     env:
       BOOTSTRAP_JA_VERSION: 0.17.2
       BUILD_VERSION: 0.17.2-build.${{ github.run_id }}
-      BOOTSTRAP_JAVA_HOME: ${{ runner.temp }}/ja-bootstrap
-      BUILT_JAVA_HOME: ${{ runner.temp }}/ja-built
     steps:
       - uses: actions/checkout@v6
 
@@ -37,6 +35,11 @@ jobs:
         with:
           distribution: zulu
           java-version-file: .java-version
+
+      - name: Configure build
+        run: |
+          echo "BOOTSTRAP_JAVA_HOME=$RUNNER_TEMP/ja-bootstrap" >> "$GITHUB_ENV"
+          echo "BUILT_JAVA_HOME=$RUNNER_TEMP/ja-built" >> "$GITHUB_ENV"
 
       - name: Link bootstrap ja development JDK
         run: >-
