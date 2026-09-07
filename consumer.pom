@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
-  <name>ja</name>
-  <description>A build and development tool for modular Java applications.</description>
+  <name>${project.artifactId}</name>
+  <description>Build and development tooling for modular Java applications distributed with ja.</description>
   <url>https://github.com/Netflix/ja</url>
   <licenses>
     <license>
@@ -17,7 +17,7 @@
       <name>Danny Thomas</name>
       <url>https://github.com/DanielThomas</url>
       <organization>Netflix, Inc.</organization>
-      <organizationUrl>https://www.netflix.com</organizationUrl>
+      <organizationUrl>https://netflix.github.io/</organizationUrl>
     </developer>
   </developers>
   <scm>
