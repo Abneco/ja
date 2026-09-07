@@ -1,5 +1,8 @@
 # ja
 
+[![Maven Central](https://img.shields.io/maven-central/v/com.netflix/com.netflix.tools.ja)](https://central.sonatype.com/artifact/com.netflix/com.netflix.tools.ja)
+![JDK 25+](https://img.shields.io/badge/JDK-25%2B-blue)
+
 The OpenJDK Project has [paved the on-ramp](https://openjdk.org/projects/amber/design-notes/on-ramp) for people learning Java and writing simple programs. `ja` lets those programs grow naturally into a module with dependencies, and later into multiple modules on a module source path, without requiring a complex build system.
 
 `ja` uses the Java module descriptor as the source of truth throughout development. Start with one module in the current directory, add dependencies without changing the tools, and move the module beneath `src` when it enters source control or develops additional module boundaries.
