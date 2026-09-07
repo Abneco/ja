@@ -16,7 +16,7 @@ The OpenJDK Project has [paved the on-ramp](https://openjdk.org/projects/amber/d
 ## Installation
 
 > [!IMPORTANT]
-> This project is currently in preview. We'd love to hear your feedback! Use Issues for bugs and Discussions for feedback and suggestions.
+> This project and its bundled tools are currently in preview. We are collecting all preview feedback here: use [Issues](https://github.com/Netflix/ja/issues) to report problems and [Discussions](https://github.com/Netflix/ja/discussions) for feedback, questions, and suggestions.
 
 Create a `ja`-enabled development JDK from a JDK 25 or later installation with `lib/src.zip` and either JMOD files or a runtime built with [`--enable-linkable-runtime`](https://openjdk.org/jeps/493). Make the source JDK available through `JAVA_HOME` or `PATH`.
 
