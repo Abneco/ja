@@ -1,0 +1,71 @@
+# Copyright 2026 Netflix, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+# in compliance with the License. You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed under the License
+# is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+# or implied. See the License for the specific language governing permissions and limitations under
+# the License.
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    env:
+      BOOTSTRAP_JA_VERSION: 0.17.2
+      BUILD_VERSION: 0.17.2-build.${{ github.run_id }}
+      BOOTSTRAP_JAVA_HOME: ${{ runner.temp }}/ja-bootstrap
+      BUILT_JAVA_HOME: ${{ runner.temp }}/ja-built
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Zulu JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version-file: .java-version
+
+      - name: Link bootstrap ja development JDK
+        run: >-
+          .github/scripts/link-ja-development-jdk.sh
+          "$JAVA_HOME"
+          "$BOOTSTRAP_JAVA_HOME"
+          "$BOOTSTRAP_JA_VERSION"
+
+      - name: Build native launchers with Zig
+        run: src/launcher/build.sh
+
+      - name: Test with bootstrap ja
+        run: '"$BOOTSTRAP_JAVA_HOME/bin/ja" test --all'
+
+      - name: Build ja with bootstrap ja
+        run: |
+          for module in com.netflix.tools.cli com.netflix.tools.launcher com.netflix.tools.ja; do
+            "$BOOTSTRAP_JAVA_HOME/bin/ja" \
+              -C "src/$module" \
+              maven install \
+              --module-version "$BUILD_VERSION"
+          done
+
+      - name: Link built ja development JDK
+        run: >-
+          .github/scripts/link-ja-development-jdk.sh
+          "$JAVA_HOME"
+          "$BUILT_JAVA_HOME"
+          "$BUILD_VERSION"
+
+      - name: Test with built ja
+        run: '"$BUILT_JAVA_HOME/bin/ja" test --all'
