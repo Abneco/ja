@@ -130,6 +130,13 @@ final class ModuleAssembler {
     private List<Plan> plans(JaInvocation commandLine, ModuleSourcePath moduleSourcePath, Options options,
             Path work, PrintStream err)
             throws IOException {
+        var selectedArguments = new ArrayList<>(commandLine.resolutionArguments());
+        selectedArguments.add("--verify-module-hashes");
+        selectedArguments.add("--module-version");
+        selectedArguments.add(options.version());
+        writeProjection(selectedArguments, ToolProjections.COMPLETE_RUNTIME_WITH_ACCESS,
+                work.resolve("selected-runtime.args"), err);
+        var artifactRuntime = new Projection(ToolProjections.COMPLETE_RUNTIME_WITH_ACCESS.options(), false, false);
         var plans = new ArrayList<Plan>();
         int index = 0;
         for (String module : commandLine.rootModules()) {
@@ -146,7 +153,7 @@ final class ModuleAssembler {
             arguments.add("--module-version");
             arguments.add(options.version());
             writeProjection(arguments, ToolProjections.JAVAC, compileArguments, err);
-            writeProjection(arguments, ToolProjections.COMPLETE_RUNTIME_WITH_ACCESS, runtimeArguments, err);
+            writeProjection(arguments, artifactRuntime, runtimeArguments, err);
             writeProjection(arguments, new Projection(Set.of("main-class", "module-version"), false, false),
                     jarArguments, err);
             writeProjection(arguments, ToolProjections.sourceList(true), javadocArguments, err);

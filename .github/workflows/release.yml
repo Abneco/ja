@@ -61,13 +61,10 @@ jobs:
           test --all
 
       - name: Build ja with bootstrap ja
-        run: |
-          for module in com.netflix.tools.cli com.netflix.tools.launcher com.netflix.tools.ja; do
-            "$BOOTSTRAP_JAVA_HOME/bin/ja" \
-              -C "src/$module" \
-              maven install \
-              --module-version "$BUILD_VERSION"
-          done
+        run: >-
+          "$BOOTSTRAP_JAVA_HOME/bin/ja"
+          run -m com.netflix.tools.ja/com.netflix.tools.ja.Ja --
+          maven install --module-version "$BUILD_VERSION"
 
       - name: Link built ja development JDK
         run: >-
@@ -83,14 +80,10 @@ jobs:
           test --all
 
       - name: Publish to Maven Central with built ja
-        run: |
-          for module in com.netflix.tools.cli com.netflix.tools.launcher com.netflix.tools.ja; do
-            "$BUILT_JAVA_HOME/bin/ja" \
-              -C "src/$module" \
-              maven deploy-central \
-              --module-version "$BUILD_VERSION" \
-              --merge-consumer-pom ../../consumer.pom
-          done
+        run: >-
+          "$BUILT_JAVA_HOME/bin/ja"
+          maven deploy-central
+          --module-version "$BUILD_VERSION"
         env:
           MAVEN_CENTRAL_USERNAME: ${{ secrets.ORG_SONATYPE_USERNAME }}
           MAVEN_CENTRAL_PASSWORD: ${{ secrets.ORG_SONATYPE_PASSWORD }}
