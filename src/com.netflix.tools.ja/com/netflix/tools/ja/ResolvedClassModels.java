@@ -17,11 +17,14 @@ package com.netflix.tools.ja;
 import java.io.IOException;
 import java.lang.ModuleLayer.Controller;
 import java.lang.classfile.ClassFile;
+import java.lang.classfile.ClassHierarchyResolver;
 import java.lang.classfile.ClassModel;
 import java.lang.classfile.MethodModel;
+import java.lang.constant.ClassDesc;
 import java.lang.module.Configuration;
 import java.lang.module.ModuleFinder;
 import java.lang.module.ModuleReference;
+import java.lang.reflect.AccessFlag;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -247,8 +250,8 @@ public final class ResolvedClassModels {
                 receiverClasses.add(receiver);
             }
         }
-        return Optional.of(new TestExecution(test.selector(), codeHash.hash(executedMethods, receiverClasses), moduleStates(),
-                runtimeImageHash, events));
+        return Optional.of(new TestExecution(test.selector(), codeHash.hash(executedMethods, receiverClasses,
+                instrumentedClassHierarchy()), moduleStates(), runtimeImageHash, events));
     }
 
     public Controller instrumentedLayer(ModuleLayer parent, Set<String> executionRoots, List<ModuleReference> supportModules) throws IOException {
@@ -303,10 +306,11 @@ public final class ResolvedClassModels {
             }
         }
         var instrumented = instrumentedModules();
+        var hierarchy = instrumentedClassHierarchy();
         var selected = completeLayer ? modules.keySet() : layerModules(instrumented);
         for (var name : selected) {
             var reference = modules.get(name);
-            references.put(name, instrumented.contains(name) ? ExecutionTraceInstrumentation.instrument(reference, patches.getOrDefault(name, List.of())) : reference);
+            references.put(name, instrumented.contains(name) ? ExecutionTraceInstrumentation.instrument(reference, patches.getOrDefault(name, List.of()), hierarchy) : reference);
         }
         return finder(references);
     }
@@ -345,6 +349,22 @@ public final class ResolvedClassModels {
                 .filter(entry -> isInstrumented(entry.getValue()))
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toUnmodifiableSet());
+    }
+
+    private ClassHierarchyResolver instrumentedClassHierarchy() throws IOException {
+        indexInstrumentedClasses();
+        var interfaces = new LinkedHashSet<ClassDesc>();
+        var superclasses = new LinkedHashMap<ClassDesc, ClassDesc>();
+        for (var model : instrumentedClasses.values()) {
+            var type = model.thisClass().asSymbol();
+            if (model.flags().has(AccessFlag.INTERFACE)) {
+                interfaces.add(type);
+            } else {
+                model.superclass().ifPresent(superclass -> superclasses.put(type, superclass.asSymbol()));
+            }
+        }
+        return ClassHierarchyResolver.of(interfaces, superclasses)
+                .orElse(ClassHierarchyResolver.defaultResolver());
     }
 
     private void indexInstrumentedClasses() throws IOException {

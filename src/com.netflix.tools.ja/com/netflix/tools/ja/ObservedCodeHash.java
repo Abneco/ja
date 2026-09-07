@@ -15,6 +15,7 @@
 package com.netflix.tools.ja;
 
 import java.lang.classfile.ClassFile;
+import java.lang.classfile.ClassHierarchyResolver;
 import java.lang.classfile.ClassModel;
 import java.lang.classfile.ClassTransform;
 import java.lang.classfile.CodeModel;
@@ -27,12 +28,14 @@ import java.util.Map;
 
 /** Hashes the methods and class structure observed during a test execution. */
 final class ObservedCodeHash {
-    private static final ClassFile CLASS_FILE = ClassFile.of();
-
     private final Map<MethodModel, byte[]> methodContent = new IdentityHashMap<>();
     private final Map<ClassModel, byte[]> classContent = new IdentityHashMap<>();
 
-    String hash(Collection<MethodModel> methods, Collection<ClassModel> classes) {
+    String hash(
+            Collection<MethodModel> methods,
+            Collection<ClassModel> classes,
+            ClassHierarchyResolver hierarchy) {
+        var classFile = ClassFile.of(ClassFile.ClassHierarchyResolverOption.of(hierarchy));
         var digest = new Sha256();
         methods.stream()
                 .distinct()
@@ -45,7 +48,7 @@ final class ObservedCodeHash {
                                 methodName(method),
                                 methodContent.computeIfAbsent(
                                         method,
-                                        candidate -> CLASS_FILE.build(
+                                        candidate -> classFile.build(
                                                 candidate.parent()
                                                          .orElseThrow()
                                                          .thisClass()
@@ -58,7 +61,7 @@ final class ObservedCodeHash {
                     var content = classContent.computeIfAbsent(
                             model,
                             candidate ->
-                                    CLASS_FILE.build(
+                                    classFile.build(
                                             candidate.thisClass().asSymbol(),
                                             builder -> builder.transform(candidate, ClassTransform.transformingMethods(MethodTransform.dropping(CodeModel.class::isInstance)))));
                     add(digest, "class", className(model), content);

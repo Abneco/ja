@@ -23,6 +23,7 @@ import java.io.PrintWriter;
 import java.io.UncheckedIOException;
 import java.lang.classfile.Annotation;
 import java.lang.classfile.ClassFile;
+import java.lang.classfile.ClassHierarchyResolver;
 import java.lang.classfile.attribute.RuntimeVisibleAnnotationsAttribute;
 import java.lang.classfile.attribute.RuntimeVisibleParameterAnnotationsAttribute;
 import java.lang.constant.ClassDesc;
@@ -481,6 +482,78 @@ class ToolRunnerTest {
                 MethodTypeDesc.of(ClassDesc.ofDescriptor("V"), ClassDesc.of("java.nio.file.Path")))) {
             fixture.prime();
             fixture.expectCached("cached");
+        }
+    }
+
+    @Test
+    void hashesObservedMethodsWithSourceClassHierarchy(@TempDir Path directory) throws Exception {
+        var moduleName = "example.hierarchy.tests";
+        var modules = Files.createDirectories(directory.resolve("modules"));
+        var module = Files.createDirectories(modules.resolve(moduleName));
+        TestModules.writeModuleInfo(module, moduleName, "org.junit.jupiter.api");
+        var testType = ClassDesc.of("example.HierarchyTest");
+        var peerType = ClassDesc.of("example.Peer");
+        var voidMethod = MethodTypeDesc.of(ClassDesc.ofDescriptor("V"));
+        var property = getClass().getName() + ".hierarchy";
+        var hierarchy = ClassHierarchyResolver.of(Set.of(), Map.of(peerType, ClassDesc.of("java.lang.Object")))
+                .orElse(ClassHierarchyResolver.defaultResolver());
+        var classFile = ClassFile.of(ClassFile.ClassHierarchyResolverOption.of(hierarchy));
+        var peer = classFile.build(peerType,
+                builder -> builder.withMethodBody(
+                        "<init>",
+                        voidMethod,
+                        ClassFile.ACC_PUBLIC,
+                        code -> code.aload(0)
+                                    .invokespecial(ClassDesc.of("java.lang.Object"), "<init>", voidMethod)
+                                    .return_()));
+        var test = classFile.build(testType,
+                builder -> {
+                    builder.withMethodBody(
+                            "<init>",
+                            voidMethod,
+                            ClassFile.ACC_PUBLIC,
+                            code -> code.aload(0)
+                                        .invokespecial(ClassDesc.of("java.lang.Object"), "<init>", voidMethod)
+                                        .return_());
+                    builder.withMethod("test", voidMethod, ClassFile.ACC_PUBLIC,
+                            method -> {
+                                method.with(RuntimeVisibleAnnotationsAttribute.of(Annotation.of(ClassDesc.of("org.junit.jupiter.api.Test"))));
+                                method.withCode(code -> {
+                                    var other = code.newLabel();
+                                    var merged = code.newLabel();
+                                    code.iconst_1()
+                                        .ifeq(other)
+                                        .new_(peerType)
+                                        .dup()
+                                        .invokespecial(peerType, "<init>", voidMethod)
+                                        .goto_(merged)
+                                        .labelBinding(other)
+                                        .ldc("value")
+                                        .labelBinding(merged)
+                                        .pop()
+                                        .ldc(property)
+                                        .ldc("executed")
+                                        .invokestatic(ClassDesc.of("java.lang.System"), "setProperty",
+                                                MethodTypeDesc.of(ClassDesc.of("java.lang.String"),
+                                                        ClassDesc.of("java.lang.String"), ClassDesc.of("java.lang.String")))
+                                        .pop()
+                                        .return_();
+                                });
+                            });
+                });
+        var packageDirectory = Files.createDirectories(module.resolve("example"));
+        Files.write(packageDirectory.resolve("Peer.class"), peer);
+        Files.write(packageDirectory.resolve("HierarchyTest.class"), test);
+        var runner = incrementalTestRunner(directory);
+
+        try {
+            assertEquals(0,
+                    runner.run(incrementalTestCommand(moduleName), List.of(),
+                            incrementalTestArguments(modules, moduleName), InputStream.nullInputStream(),
+                            System.out, System.err));
+            assertEquals("executed", System.getProperty(property));
+        } finally {
+            System.clearProperty(property);
         }
     }
 

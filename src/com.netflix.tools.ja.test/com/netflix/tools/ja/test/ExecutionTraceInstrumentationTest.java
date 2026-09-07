@@ -18,6 +18,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
 import java.lang.classfile.Annotation;
 import java.lang.classfile.ClassFile;
+import java.lang.classfile.ClassHierarchyResolver;
 import java.lang.classfile.attribute.RuntimeVisibleAnnotationsAttribute;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.MethodTypeDesc;
@@ -29,6 +30,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executors;
@@ -65,7 +67,8 @@ class ExecutionTraceInstrumentationTest {
         var testType = ClassDesc.of("example.LayerTest");
         var supplierType = ClassDesc.of("example.RootSupplier");
         var supplierInterface = ClassDesc.of("java.util.function.Supplier");
-        var original = ClassFile.of().build(testType,
+        var hierarchy = ClassHierarchyResolver.of(Set.of(), Map.of(supplierType, CD_Object)).orElse(ClassHierarchyResolver.defaultResolver());
+        var original = ClassFile.of(ClassFile.ClassHierarchyResolverOption.of(hierarchy)).build(testType,
                 builder -> {
                     builder.withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_SUPER);
                     builder.withMethodBody(
@@ -78,14 +81,21 @@ class ExecutionTraceInstrumentationTest {
                     builder.withMethod("test", VOID_METHOD, ClassFile.ACC_PUBLIC,
                             method -> {
                                 method.with(RuntimeVisibleAnnotationsAttribute.of(Annotation.of(ClassDesc.of("org.junit.jupiter.api.Test"))));
-                                method.withCode(
-                                        code -> code.aconst_null()
-                                                    .new_(supplierType)
-                                                    .dup()
-                                                    .invokespecial(supplierType, "<init>", VOID_METHOD)
-                                                    .invokestatic(ClassDesc.of("java.util.Objects"), "requireNonNullElseGet", MethodTypeDesc.of(CD_Object, CD_Object, supplierInterface))
-                                                    .pop()
-                                                    .return_());
+                                method.withCode(code -> {
+                                    var other = code.newLabel();
+                                    var merged = code.newLabel();
+                                    code.iconst_1()
+                                        .ifeq(other)
+                                        .new_(supplierType)
+                                        .dup()
+                                        .invokespecial(supplierType, "<init>", VOID_METHOD)
+                                        .goto_(merged)
+                                        .labelBinding(other)
+                                        .ldc("value")
+                                        .labelBinding(merged)
+                                        .pop()
+                                        .return_();
+                                });
                             });
                 });
         var classFile = module.resolve("example/LayerTest.class");
@@ -139,7 +149,7 @@ class ExecutionTraceInstrumentationTest {
                 .findFirst()
                 .orElseThrow();
         assertEquals(
-                Set.of("example/LayerTest.<init>()V", "example/LayerTest.test()V", "example/RootSupplier.<init>()V", "example/RootSupplier.get()Ljava/lang/Object;"),
+                Set.of("example/LayerTest.<init>()V", "example/LayerTest.test()V", "example/RootSupplier.<init>()V"),
                 trace.events(execution).stream()
                         .map(Event::method)
                         .filter(method -> method.startsWith("example/"))

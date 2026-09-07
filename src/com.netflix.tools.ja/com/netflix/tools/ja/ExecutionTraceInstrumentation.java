@@ -18,6 +18,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.classfile.ClassFile;
+import java.lang.classfile.ClassHierarchyResolver;
 import java.lang.classfile.ClassModel;
 import java.lang.classfile.CodeBuilder;
 import java.lang.classfile.CodeElement;
@@ -73,7 +74,11 @@ public final class ExecutionTraceInstrumentation {
     private ExecutionTraceInstrumentation() {}
 
     public static byte[] instrument(ClassModel model) {
-        return ClassFile.of().transformClass(model, (builder, element) -> {
+        return instrument(model, ClassHierarchyResolver.defaultResolver());
+    }
+
+    static byte[] instrument(ClassModel model, ClassHierarchyResolver hierarchy) {
+        return ClassFile.of(ClassFile.ClassHierarchyResolverOption.of(hierarchy)).transformClass(model, (builder, element) -> {
             if (element instanceof MethodModel method && method.code().isPresent()) {
                 builder.transformMethod(method, MethodTransform.transformingCode(probe(method)));
             } else {
@@ -87,13 +92,17 @@ public final class ExecutionTraceInstrumentation {
     }
 
     public static ModuleReference instrument(ModuleReference reference, List<Path> patches) throws IOException {
+        return instrument(reference, patches, ClassHierarchyResolver.defaultResolver());
+    }
+
+    static ModuleReference instrument(ModuleReference reference, List<Path> patches, ClassHierarchyResolver hierarchy) throws IOException {
         var patchResources = readPatches(patches);
         var descriptor = withPatchPackages(reference.descriptor(), patchResources.keySet());
         return new ModuleReference(descriptor, reference.location()
                 .orElse(null)) {
             @Override
             public ModuleReader open() throws IOException {
-                return new InstrumentedModuleReader(reference.open(), patchResources);
+                return new InstrumentedModuleReader(reference.open(), patchResources, hierarchy);
             }
         };
     }
@@ -181,10 +190,12 @@ public final class ExecutionTraceInstrumentation {
     private static final class InstrumentedModuleReader implements ModuleReader {
         private final ModuleReader delegate;
         private final Map<String, PatchResource> patches;
+        private final ClassHierarchyResolver hierarchy;
 
-        private InstrumentedModuleReader(ModuleReader delegate, Map<String, PatchResource> patches) {
+        private InstrumentedModuleReader(ModuleReader delegate, Map<String, PatchResource> patches, ClassHierarchyResolver hierarchy) {
             this.delegate = delegate;
             this.patches = patches;
+            this.hierarchy = hierarchy;
         }
 
         @Override
@@ -202,7 +213,7 @@ public final class ExecutionTraceInstrumentation {
             }
             try (var stream = input.orElseThrow()) {
                 var model = ClassFile.of().parse(stream.readAllBytes());
-                return Optional.of(new ByteArrayInputStream(instrument(model)));
+                return Optional.of(new ByteArrayInputStream(instrument(model, hierarchy)));
             }
         }
 
