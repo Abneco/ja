@@ -1,4 +1,4 @@
-com.netflix.tools.jdocserver@0.3.0=module:sha256:96fff92b073c4cb88d478a4a9651b5be1b09aa8864bd17b13e329687da5cdf5a
-com.netflix.tools.jfmt@0.6.0=module:sha256:682fde70acdfeb39d20d157ba6ed35b8b25978f1e1d7909074f20e606d7e4ca7
-com.netflix.tools.jig@0.13.0=module:sha256:8d598f567a47114fc56b9df88094029f9cf9822ab49d029574a2a5f9f87db13d
-com.netflix.tools.jist@0.3.5=module:sha256:810b497e48c7248d6aa813405ae86c05423b483d95ab93ec018e79d72b478483
+com.netflix.tools.jdocserver@0.4.0=module:sha256:dd1dc16b5f3ce2388607ae53194ee88cf9594b018f0ea0f8b01692767a68fa70
+com.netflix.tools.jfmt@0.7.0=module:sha256:bad61852814646e52b2ac96928c0b83fdc7d83d89b697e3e96eb7978a5956a59
+com.netflix.tools.jig@0.13.2=module:sha256:80f34d2934534523e0096c1945c160efaa6eaece0b3c7905ae8570baca90d591
+com.netflix.tools.jist@0.4.0=module:sha256:aa97e1af4e1b0f8c3610875c6b7b4ebad73ee5968e0f43358528b6ab37f7c1aa
