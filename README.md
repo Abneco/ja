@@ -3,7 +3,7 @@
 [![Maven Central](https://img.shields.io/maven-central/v/com.netflix/com.netflix.tools.ja)](https://central.sonatype.com/artifact/com.netflix/com.netflix.tools.ja)
 ![JDK 25+](https://img.shields.io/badge/JDK-25%2B-blue)
 
-The OpenJDK Project has [paved the on-ramp](https://openjdk.org/projects/amber/design-notes/on-ramp) for people learning Java and writing simple programs. `ja` lets those programs grow naturally into a module with dependencies, and later into multiple modules on a module source path, without requiring a complex build system.
+Java has [paved the on-ramp](https://openjdk.org/projects/amber/design-notes/on-ramp) for people learning Java and writing simple programs. `ja` lets those programs grow naturally into a module with dependencies, and later into multiple modules on a module source path, without requiring a complex build system.
 
 `ja` uses the Java module descriptor as the source of truth throughout development. Start with one module in the current directory, add dependencies without changing the tools, and move the module beneath `src` when it enters source control or develops additional module boundaries.
 
@@ -119,9 +119,9 @@ The working directory determines which modules are in scope. `ja` supplies each 
 ja tool javap com.example.hello.Main
 ```
 
-In a repository, move the module to `src/com.example.hello`. With that layout, `ja init` creates new modules alongside it under `src`.
+When moving to source control move to a module source path layout, `src/com.example.hello`. With that layout, `ja init` creates new modules alongside it under `src`.
 
-`com.example.hello` is fine for this example. For a published module, choose a globally meaningful reverse-domain name following [Sonatype's namespace conventions](https://central.sonatype.org/register/namespace/), using a domain you own or a namespace you can verify, such as `io.github.owner.application`.
+While `com.example.hello` is fine for this example, for a module you intend to publish, choose a globally meaningful reverse-domain name following [Sonatype's namespace conventions](https://central.sonatype.org/register/namespace/), using a domain you own or a namespace you can verify, such as `io.github.owner.application`.
 
 ## Module layout
 
@@ -136,11 +136,11 @@ A source module is a directory containing `module-info.java`, with Java source a
 
 There is no required separation between production and test sources and resources. Colocating tests and benchmarks with the implementation is recommended when they need access to package-private code. Tools define [class and package name suffix conventions](#tool-metadata) that identify content to filter out when packaging a module.
 
-Dedicated test and benchmark modules with ordinary requirements are a better fit when they use only public APIs. The [standard multi-release layout](#resources-and-multi-release-modules) is also supported for release-specific source and resources.
+Dedicated test and benchmark modules with ordinary requirements are a better fit when they use only public APIs. A [multi-release layout](#resources-and-multi-release-modules) is also supported for release-specific source and resources.
 
 ### Module source paths
 
-For a layout more suitable for source control or to support multiple modules, place each module using the module source path convention in   `src`:
+For a layout more suitable for source control or to support multiple modules, place each module using the module source path convention in `src`:
 
 ```text
 src/
@@ -169,7 +169,7 @@ ja -C src/com.example.application compile
 
 ### Tests and benchmarks
 
-For white-box tests, keep the tests and their resources alongside the implementation:
+For white-box tests, you can keep tests and their resources alongside the implementation:
 
 ```text
 com.example.application/
@@ -190,7 +190,7 @@ ja require --static org.junit.jupiter
 
 When the module is packaged, the [class and package suffixes declared by the tool](#tool-metadata) determine which supporting content is left out.
 
-For black-box tests against exported APIs, use a dedicated module with ordinary requirements:
+For black-box tests against exported APIs, use a dedicated module with ordinary requirements. Making JUnit a regular requirement ensures that tests and resources remain in the packaged module:
 
 ```java
 module com.example.application.test {
@@ -198,8 +198,6 @@ module com.example.application.test {
     requires org.junit.jupiter; // @6.1.3
 }
 ```
-
-JUnit is part of this module at runtime, and its tests and resources remain in the packaged module.
 
 Benchmarks follow the same pattern. Add the JMH tool as a static requirement when benchmarks live with the implementation:
 
@@ -274,7 +272,7 @@ module com.example.hello {
 }
 ```
 
-Java's dependency modifiers are available through the command line:
+Requirement modifiers are available through the command line:
 
 ```sh
 ja require --static org.junit.jupiter@6.1.3
@@ -294,11 +292,11 @@ ja require --update=major
 
 By default, updates select compatible minor and patch releases. Versions before `1.0.0` may advance through `1.x`; later versions remain on their current major release. Use `patch` to remain on the current major and minor release, or `major` to allow any newer stable semantic version. Dependencies with only non-semantic versions advance to the latest version reported by the repository.
 
-`ja` records hashes of resolved dependencies in `module-info.hash` and verifies them on later commands. It stops if an artifact changes without changing its version.
+Hashes of resolved dependencies in `module-info.hash` and are verified when resolving later. It stops if an artifact changes without changing its version.
 
 ## Generate checked-in sources
 
-`ja` treats generated source code as ordinary source files. Review, maintain, and check them in alongside handwritten source. A clean checkout can then compile without running the generator first.
+Annotation processor generated code is treated as ordinary source files. Review, maintain, and check them in alongside handwritten source. A clean checkout can then compile without running the generator first, and ensures that annotation processors aren't opaque.
 
 Add an annotation processor as a static dependency, or provide it from another source module, then select it with `@processWith`:
 
