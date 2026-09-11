@@ -29,11 +29,12 @@ module com.netflix.tools.ja {
     requires jdk.httpserver;
     requires jdk.javadoc;
     requires jdk.zipfs;
-    requires static com.netflix.tools.jfmt; // @0.7.0
+    requires static com.netflix.tools.jfmt; // @0.7.2
     requires static com.netflix.tools.jist; // @0.5.0
     requires static com.netflix.tools.jdocserver; // @0.4.0
 
     uses java.util.spi.ToolProvider;
+    uses javax.tools.JavaCompiler;
     uses javax.tools.Tool;
 
     provides javax.tools.Tool with com.netflix.tools.ja.JaTool;
