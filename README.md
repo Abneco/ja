@@ -14,7 +14,7 @@ Java has [paved the on-ramp](https://openjdk.org/projects/amber/design-notes/on-
 - Keep output concise so coding agents can work effectively without losing important errors
 
 > [!IMPORTANT]
-> This project and its bundled tools are currently in preview. We are collecting all preview feedback here: use [Issues](https://github.com/Netflix/ja/issues) to report problems and [Discussions](https://github.com/Netflix/ja/discussions) for feedback, questions, and suggestions.
+> This project and its bundled tools are currently in preview. We are collecting feedback for all of the tools together in [Discussions](https://github.com/Netflix/ja/discussions).
 
 ## Installation
 
