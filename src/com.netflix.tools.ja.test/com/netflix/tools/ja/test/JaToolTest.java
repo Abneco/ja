@@ -244,7 +244,9 @@ class JaToolTest {
                 directory.toString(), "compile");
 
         assertEquals(2, result.exitCode());
-        assertEquals("ja: Unknown ja option: --module-source-path\n", result.error());
+        assertTrue(result.error().startsWith("ja: Unknown ja option: --module-source-path\n"), result.error());
+        assertTrue(result.error().contains("java.lang.IllegalArgumentException: Unknown ja option: --module-source-path\n"),
+                result.error());
     }
 
     @Test
@@ -263,6 +265,32 @@ class JaToolTest {
 
         assertEquals(2, result.exitCode());
         assertEquals("ja: Unknown install argument: --\n", result.error());
+    }
+
+    @Test
+    void doesNotEnableVerboseDiagnosticsForCommandArguments() {
+        Result result = run("install", "com.example.foo@1", "--verbose");
+
+        assertEquals(2, result.exitCode());
+        assertEquals("ja: Unknown install argument: --verbose\n", result.error());
+    }
+
+    @Test
+    void doesNotEnableVerboseDiagnosticsForWorkingDirectoryValues() {
+        Result result = run("-C", "--verbose", "unknown");
+
+        assertEquals(2, result.exitCode());
+        assertEquals("ja: Unknown command: unknown\n", result.error());
+    }
+
+    @Test
+    void reportsVerboseDiagnosticsAfterWorkingDirectoryPreparation(@TempDir Path directory) {
+        Result result = run("-C", directory.toString(), "--verbose", "unknown");
+
+        assertEquals(2, result.exitCode());
+        assertTrue(result.error().startsWith("ja: Unknown command: unknown\n"), result.error());
+        assertTrue(result.error().contains("java.lang.IllegalArgumentException: Unknown command: unknown\n"),
+                result.error());
     }
 
     @Test
