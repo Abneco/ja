@@ -18,9 +18,11 @@
 module com.netflix.tools.ja {
     exports com.netflix.tools.ja to
             com.netflix.tools.ja.test;
+    exports com.netflix.tools.ja.project to
+            com.netflix.tools.ja.test;
 
     requires com.netflix.tools.cli;
-    requires com.netflix.tools.jig; // @0.17.0
+    requires com.netflix.tools.jig; // @0.17.1
     requires com.netflix.tools.launcher;
     requires java.compiler;
     requires java.xml;
