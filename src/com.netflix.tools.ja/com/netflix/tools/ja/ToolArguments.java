@@ -34,6 +34,21 @@ import javax.tools.OptionChecker;
 public final class ToolArguments {
     private ToolArguments() {}
 
+    static List<String> withVerbose(List<String> arguments) {
+        int separator = arguments.indexOf("--");
+        int position = separator < 0 ? arguments.size() : separator;
+        if (arguments.subList(0, position).contains("--verbose")) {
+            return arguments;
+        }
+        int option = 0;
+        while (option < position && !arguments.get(option).startsWith("-")) {
+            option++;
+        }
+        var verboseArguments = new ArrayList<>(arguments);
+        verboseArguments.add(option, "--verbose");
+        return List.copyOf(verboseArguments);
+    }
+
     static List<String> selectedModules(List<String> arguments) {
         return optionValues(arguments, "--module").stream()
                 .flatMap(value -> java.util.Arrays.stream(value.split(",")))
